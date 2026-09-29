@@ -58,3 +58,9 @@ pub const FALLBACK_DELAY_SECS: i64 = 365 * 24 * 60 * 60;
 
 /// Longest release URL the reporter may attach (it goes in the transaction log).
 pub const MAX_URL_LEN: usize = 200;
+
+/// Seeds for offers on the board and the escrow account each offer controls.
+#[constant]
+pub const OFFER_SEED: &[u8] = b"offer";
+#[constant]
+pub const ESCROW_SEED: &[u8] = b"escrow";

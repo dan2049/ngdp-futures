@@ -74,6 +74,39 @@ pub struct Market {
     /// USDC base units paid per ABOVE / BELOW token once settled.
     pub above_payout: u64,
     pub below_payout: u64,
+    /// Price of the most recent ABOVE trade on the board (USDC units per token), 0 if none.
+    /// Headline: implied gap ($bn) = floor_bn + last_price / 1_000_000.
+    pub last_price: u64,
+    pub last_trade_ts: i64,
+}
+
+/// Which way an offer on the board goes. The board only ever trades ABOVE against USDC.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum OfferSide {
+    /// Maker escrows ABOVE tokens and wants USDC.
+    SellAbove,
+    /// Maker escrows USDC and wants ABOVE tokens.
+    BuyAbove,
+}
+
+/// One standing offer on a market's board.
+#[account]
+#[derive(InitSpace)]
+pub struct Offer {
+    pub market: Pubkey,
+    pub maker: Pubkey,
+    /// Maker's token account that receives the proceeds (USDC if selling, ABOVE if buying).
+    pub maker_receive: Pubkey,
+    /// Holds the maker's ABOVE (selling) or USDC (buying) until filled or cancelled.
+    pub escrow: Pubkey,
+    pub side: OfferSide,
+    /// USDC units per ABOVE token (e.g. 600_000_000 = $600).
+    pub price: u64,
+    /// ABOVE tokens still available on this offer.
+    pub quantity: u64,
+    /// Chosen by the maker so one maker can have many offers.
+    pub offer_id: u64,
+    pub bump: u8,
 }
 
 /// Payout per ABOVE and BELOW token for a given gap.

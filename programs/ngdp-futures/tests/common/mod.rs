@@ -258,3 +258,16 @@ pub fn new_user(svm: &mut LiteSVM, usdc_mint: Pubkey, quarter_index: u16, usdc: 
     put_token_account(svm, ua.below, m.below_mint, user.pubkey(), 0);
     (user, ua)
 }
+
+/// Send several instructions as ONE all-or-nothing transaction.
+pub fn send_many(svm: &mut LiteSVM, ixs: &[Instruction], signer: &Keypair) -> bool {
+    svm.expire_blockhash();
+    let blockhash = svm.latest_blockhash();
+    let msg = Message::new_with_blockhash(ixs, Some(&signer.pubkey()), &blockhash);
+    let tx = VersionedTransaction::try_new(VersionedMessage::Legacy(msg), &[signer]).unwrap();
+    let res = svm.send_transaction(tx);
+    if let Err(e) = &res {
+        println!("tx failed: {:?}", e.err);
+    }
+    res.is_ok()
+}

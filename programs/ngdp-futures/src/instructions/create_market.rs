@@ -103,6 +103,8 @@ pub fn handle_create_market(
     market.gap_tenths = 0;
     market.above_payout = 0;
     market.below_payout = 0;
+    market.last_price = 0;
+    market.last_trade_ts = 0;
 
     msg!(
         "Market created: quarter {}, band {}bn to {}bn, {} USDC units per pair",

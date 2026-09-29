@@ -28,4 +28,12 @@ pub enum ErrorCode {
     InvalidValue,
     #[msg("Release URL is too long")]
     UrlTooLong,
+    #[msg("Price must be above zero and no more than the collateral per pair")]
+    InvalidPrice,
+    #[msg("Token account or mint does not match this offer")]
+    WrongMint,
+    #[msg("You cannot fill your own offer")]
+    SelfFill,
+    #[msg("Not enough left on this offer")]
+    NotEnoughRemaining,
 }

@@ -83,4 +83,26 @@ pub mod ngdp_futures {
     pub fn settle_redeem(ctx: Context<SettleRedeem>, above_amount: u64, below_amount: u64) -> Result<()> {
         crate::instructions::settle_redeem::handle_settle_redeem(ctx, above_amount, below_amount)
     }
+
+    /// Anyone: post an offer to sell or buy `quantity` ABOVE at `price` USDC units each.
+    /// The ABOVE (selling) or USDC (buying) is locked in escrow until filled or cancelled.
+    pub fn post_offer(
+        ctx: Context<PostOffer>,
+        offer_id: u64,
+        side: OfferSide,
+        price: u64,
+        quantity: u64,
+    ) -> Result<()> {
+        crate::instructions::offers::handle_post_offer(ctx, offer_id, side, price, quantity)
+    }
+
+    /// Anyone except the maker: take all or part of an offer.
+    pub fn fill_offer(ctx: Context<FillOffer>, quantity: u64) -> Result<()> {
+        crate::instructions::offers::handle_fill_offer(ctx, quantity)
+    }
+
+    /// Maker only: take back whatever is left in escrow and close the offer. Works in any market state.
+    pub fn cancel_offer(ctx: Context<CancelOffer>) -> Result<()> {
+        crate::instructions::offers::handle_cancel_offer(ctx)
+    }
 }
