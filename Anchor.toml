@@ -9,6 +9,9 @@ skip-lint = false
 [programs.localnet]
 ngdp_futures = "5B6CZuXEbcah5BHcp7N8KxacPQsEhKLE3N4RweXNga8W"
 
+[programs.devnet]
+ngdp_futures = "5B6CZuXEbcah5BHcp7N8KxacPQsEhKLE3N4RweXNga8W"
+
 [provider]
 cluster = "localnet"
 wallet = "~/.config/solana/id.json"

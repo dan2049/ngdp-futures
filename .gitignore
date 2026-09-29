@@ -10,3 +10,6 @@ test-ledger
 # Never commit private keys
 id.json
 *-keypair.json
+
+# Devnet mock-USDC keys created by the setup script
+.devnet/
