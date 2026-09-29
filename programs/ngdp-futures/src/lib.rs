@@ -29,4 +29,24 @@ pub mod ngdp_futures {
     pub fn create_target_table(ctx: Context<CreateTargetTable>) -> Result<()> {
         crate::instructions::create_target_table::handle_create_target_table(ctx)
     }
+
+    /// Admin only: open a quarter's market with its band (e.g. -1000, +1000 $bn).
+    pub fn create_market(
+        ctx: Context<CreateMarket>,
+        quarter_index: u16,
+        floor_bn: i64,
+        cap_bn: i64,
+    ) -> Result<()> {
+        crate::instructions::create_market::handle_create_market(ctx, quarter_index, floor_bn, cap_bn)
+    }
+
+    /// Anyone: deposit USDC, receive `amount` ABOVE + `amount` BELOW.
+    pub fn mint_pair(ctx: Context<MintPair>, amount: u64) -> Result<()> {
+        crate::instructions::mint_pair::handle_mint_pair(ctx, amount)
+    }
+
+    /// Anyone: return `amount` ABOVE + `amount` BELOW, get the USDC back.
+    pub fn redeem_pair(ctx: Context<RedeemPair>, amount: u64) -> Result<()> {
+        crate::instructions::redeem_pair::handle_redeem_pair(ctx, amount)
+    }
 }

@@ -1,0 +1,103 @@
+use anchor_lang::prelude::*;
+use anchor_spl::token::{burn, transfer_checked, Burn, Mint, Token, TokenAccount, TransferChecked};
+
+use crate::{
+    constants::*,
+    error::ErrorCode,
+    state::{Market, MarketState},
+};
+
+#[derive(Accounts)]
+pub struct RedeemPair<'info> {
+    pub user: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [MARKET_SEED, &market.quarter_index.to_le_bytes()],
+        bump = market.bump,
+        has_one = above_mint,
+        has_one = below_mint,
+        has_one = vault,
+        has_one = usdc_mint
+    )]
+    pub market: Box<Account<'info, Market>>,
+    #[account(mut)]
+    pub above_mint: Box<Account<'info, Mint>>,
+    #[account(mut)]
+    pub below_mint: Box<Account<'info, Mint>>,
+    #[account(mut)]
+    pub vault: Box<Account<'info, TokenAccount>>,
+    pub usdc_mint: Box<Account<'info, Mint>>,
+    #[account(mut, token::mint = usdc_mint, token::authority = user)]
+    pub user_usdc: Box<Account<'info, TokenAccount>>,
+    #[account(mut, token::mint = above_mint, token::authority = user)]
+    pub user_above: Box<Account<'info, TokenAccount>>,
+    #[account(mut, token::mint = below_mint, token::authority = user)]
+    pub user_below: Box<Account<'info, TokenAccount>>,
+    pub token_program: Program<'info, Token>,
+}
+
+/// Return `amount` ABOVE + `amount` BELOW; get `amount` x collateral_per_pair USDC back.
+pub fn handle_redeem_pair(ctx: Context<RedeemPair>, amount: u64) -> Result<()> {
+    require!(amount > 0, ErrorCode::ZeroAmount);
+    require!(
+        ctx.accounts.market.state == MarketState::Open,
+        ErrorCode::MarketNotOpen
+    );
+    let usdc_amount = amount
+        .checked_mul(ctx.accounts.market.collateral_per_pair)
+        .ok_or(ErrorCode::MathOverflow)?;
+    let token_program = ctx.accounts.token_program.key();
+
+    // 1. Burn one ABOVE and one BELOW per pair (the user signs; fails if they hold too few).
+    burn(
+        CpiContext::new(
+            token_program,
+            Burn {
+                mint: ctx.accounts.above_mint.to_account_info(),
+                from: ctx.accounts.user_above.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            },
+        ),
+        amount,
+    )?;
+    burn(
+        CpiContext::new(
+            token_program,
+            Burn {
+                mint: ctx.accounts.below_mint.to_account_info(),
+                from: ctx.accounts.user_below.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            },
+        ),
+        amount,
+    )?;
+
+    // 2. Vault -> user's USDC (the market signs with its seeds).
+    let quarter = ctx.accounts.market.quarter_index.to_le_bytes();
+    let bump = [ctx.accounts.market.bump];
+    let market_seeds: &[&[u8]] = &[MARKET_SEED, &quarter, &bump];
+    let signer = &[market_seeds];
+
+    transfer_checked(
+        CpiContext::new_with_signer(
+            token_program,
+            TransferChecked {
+                from: ctx.accounts.vault.to_account_info(),
+                mint: ctx.accounts.usdc_mint.to_account_info(),
+                to: ctx.accounts.user_usdc.to_account_info(),
+                authority: ctx.accounts.market.to_account_info(),
+            },
+            signer,
+        ),
+        usdc_amount,
+        ctx.accounts.usdc_mint.decimals,
+    )?;
+
+    let market = &mut ctx.accounts.market;
+    market.total_pairs = market
+        .total_pairs
+        .checked_sub(amount)
+        .ok_or(ErrorCode::MathOverflow)?;
+    msg!("Redeemed {} pairs for {} USDC units", amount, usdc_amount);
+    Ok(())
+}

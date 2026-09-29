@@ -30,3 +30,18 @@ pub const LEVEL_TARGETS: [i64; NUM_TARGETS] = [
     482_432, 488_353, 494_346, 500_412, // Q3 2034 .. Q2 2035
     506_554,                            // Q3 2035
 ];
+
+/// Seeds for each quarter's market and the accounts it controls.
+#[constant]
+pub const MARKET_SEED: &[u8] = b"market";
+#[constant]
+pub const ABOVE_MINT_SEED: &[u8] = b"above";
+#[constant]
+pub const BELOW_MINT_SEED: &[u8] = b"below";
+#[constant]
+pub const VAULT_SEED: &[u8] = b"vault";
+
+/// USDC has 6 decimals: 1 USDC = 1_000_000 base units.
+/// Multiplier is $1 per $1bn of gap, so 1 $bn of band = 1_000_000 base units.
+#[constant]
+pub const USDC_UNITS_PER_BN: u64 = 1_000_000;

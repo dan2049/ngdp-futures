@@ -31,3 +31,35 @@ impl TargetTable {
         self.targets.get(quarter_index as usize).copied()
     }
 }
+
+/// Where a market is in its life. Step 2 only uses Open;
+/// Pending / Final / Fallback arrive with settlement.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum MarketState {
+    Open,
+    Pending,
+    Final,
+    Fallback,
+}
+
+/// One quarterly contract, e.g. quarter_index 5 = Q4 2026.
+#[account]
+#[derive(InitSpace)]
+pub struct Market {
+    /// Quarters after Q3 2025 (1 = Q4 2025 ... 40 = Q3 2035).
+    pub quarter_index: u16,
+    /// Band in $bn, e.g. -1000 and +1000.
+    pub floor_bn: i64,
+    pub cap_bn: i64,
+    /// USDC base units locked per ABOVE+BELOW pair: (cap - floor) x $1.
+    pub collateral_per_pair: u64,
+    pub usdc_mint: Pubkey,
+    pub above_mint: Pubkey,
+    pub below_mint: Pubkey,
+    /// Token account holding every pair's USDC. Owned by this market.
+    pub vault: Pubkey,
+    pub state: MarketState,
+    /// Pairs currently in existence.
+    pub total_pairs: u64,
+    pub bump: u8,
+}
