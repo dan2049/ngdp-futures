@@ -30,14 +30,22 @@ pub mod ngdp_futures {
         crate::instructions::create_target_table::handle_create_target_table(ctx)
     }
 
-    /// Admin only: open a quarter's market with its band (e.g. -1000, +1000 $bn).
+    /// Admin only: open a quarter's market with its band (e.g. -1000, +1000 $bn)
+    /// and the scheduled BEA advance-estimate release time (unix seconds).
     pub fn create_market(
         ctx: Context<CreateMarket>,
         quarter_index: u16,
         floor_bn: i64,
         cap_bn: i64,
+        expected_release_ts: i64,
     ) -> Result<()> {
-        crate::instructions::create_market::handle_create_market(ctx, quarter_index, floor_bn, cap_bn)
+        crate::instructions::create_market::handle_create_market(
+            ctx,
+            quarter_index,
+            floor_bn,
+            cap_bn,
+            expected_release_ts,
+        )
     }
 
     /// Anyone: deposit USDC, receive `amount` ABOVE + `amount` BELOW.
@@ -48,5 +56,31 @@ pub mod ngdp_futures {
     /// Anyone: return `amount` ABOVE + `amount` BELOW, get the USDC back.
     pub fn redeem_pair(ctx: Context<RedeemPair>, amount: u64) -> Result<()> {
         crate::instructions::redeem_pair::handle_redeem_pair(ctx, amount)
+    }
+
+    /// Reporter: post the first BEA estimate for the quarter (tenths of $bn) and its URL.
+    /// Starts the 24-hour challenge window.
+    pub fn report_value(ctx: Context<ReportValue>, value_tenths: i64, release_url: String) -> Result<()> {
+        crate::instructions::settlement::handle_report_value(ctx, value_tenths, release_url)
+    }
+
+    /// Admin: replace a wrong reported value. Restarts the 24-hour window.
+    pub fn correct_value(ctx: Context<CorrectValue>, value_tenths: i64) -> Result<()> {
+        crate::instructions::settlement::handle_correct_value(ctx, value_tenths)
+    }
+
+    /// Anyone, 24h after the last report/correction: lock the value and compute payouts.
+    pub fn finalise(ctx: Context<Finalise>) -> Result<()> {
+        crate::instructions::settlement::handle_finalise(ctx)
+    }
+
+    /// Anyone, 365 days after the scheduled release with nothing reported: settle at the midpoint.
+    pub fn fallback_settle(ctx: Context<FallbackSettle>) -> Result<()> {
+        crate::instructions::settlement::handle_fallback_settle(ctx)
+    }
+
+    /// Token holders, after settlement: burn ABOVE and/or BELOW for their USDC payout.
+    pub fn settle_redeem(ctx: Context<SettleRedeem>, above_amount: u64, below_amount: u64) -> Result<()> {
+        crate::instructions::settle_redeem::handle_settle_redeem(ctx, above_amount, below_amount)
     }
 }

@@ -14,4 +14,18 @@ pub enum ErrorCode {
     MarketNotOpen,
     #[msg("Arithmetic overflow")]
     MathOverflow,
+    #[msg("Only the reporter can do this")]
+    NotReporter,
+    #[msg("Market is not waiting on a reported value")]
+    NotPending,
+    #[msg("The 24-hour challenge window has not ended yet")]
+    ChallengeWindowOpen,
+    #[msg("The fallback deadline has not passed yet")]
+    FallbackTooEarly,
+    #[msg("Market is not settled yet")]
+    NotSettled,
+    #[msg("Reported NGDP must be positive")]
+    InvalidValue,
+    #[msg("Release URL is too long")]
+    UrlTooLong,
 }

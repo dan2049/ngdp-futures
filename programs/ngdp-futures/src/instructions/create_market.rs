@@ -70,6 +70,7 @@ pub fn handle_create_market(
     quarter_index: u16,
     floor_bn: i64,
     cap_bn: i64,
+    expected_release_ts: i64,
 ) -> Result<()> {
     // Q3 2025 (index 0) is the base, not a tradable quarter.
     require!(quarter_index >= 1, ErrorCode::InvalidQuarter);
@@ -96,6 +97,12 @@ pub fn handle_create_market(
     market.state = MarketState::Open;
     market.total_pairs = 0;
     market.bump = ctx.bumps.market;
+    market.expected_release_ts = expected_release_ts;
+    market.reported_value_tenths = 0;
+    market.report_ts = 0;
+    market.gap_tenths = 0;
+    market.above_payout = 0;
+    market.below_payout = 0;
 
     msg!(
         "Market created: quarter {}, band {}bn to {}bn, {} USDC units per pair",

@@ -45,3 +45,16 @@ pub const VAULT_SEED: &[u8] = b"vault";
 /// Multiplier is $1 per $1bn of gap, so 1 $bn of band = 1_000_000 base units.
 #[constant]
 pub const USDC_UNITS_PER_BN: u64 = 1_000_000;
+
+/// After a value is reported, anyone has 24 hours to check it against BEA
+/// before it can be finalised. A correction by the admin restarts the 24 hours.
+#[constant]
+pub const CHALLENGE_WINDOW_SECS: i64 = 24 * 60 * 60;
+
+/// Last resort: if no BEA estimate has been reported 365 days after the
+/// scheduled advance-estimate release, anyone can settle at the midpoint.
+#[constant]
+pub const FALLBACK_DELAY_SECS: i64 = 365 * 24 * 60 * 60;
+
+/// Longest release URL the reporter may attach (it goes in the transaction log).
+pub const MAX_URL_LEN: usize = 200;

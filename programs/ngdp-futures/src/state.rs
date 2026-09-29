@@ -32,8 +32,9 @@ impl TargetTable {
     }
 }
 
-/// Where a market is in its life. Step 2 only uses Open;
-/// Pending / Final / Fallback arrive with settlement.
+/// Where a market is in its life:
+/// Open -> Pending (value reported) -> Final (after the 24h window),
+/// or Open -> Fallback (no BEA estimate 365 days after the scheduled release).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
 pub enum MarketState {
     Open,
@@ -62,4 +63,64 @@ pub struct Market {
     /// Pairs currently in existence.
     pub total_pairs: u64,
     pub bump: u8,
+    /// Scheduled BEA advance-estimate release (unix seconds). Only used for the fallback deadline.
+    pub expected_release_ts: i64,
+    /// Reported NGDP in tenths of $bn (e.g. 331_000 = $33,100.0bn). 0 until reported.
+    pub reported_value_tenths: i64,
+    /// When the value was reported or last corrected (unix seconds).
+    pub report_ts: i64,
+    /// Final gap = reported - Level Target, tenths of $bn (can be negative).
+    pub gap_tenths: i64,
+    /// USDC base units paid per ABOVE / BELOW token once settled.
+    pub above_payout: u64,
+    pub below_payout: u64,
+}
+
+/// Payout per ABOVE and BELOW token for a given gap.
+/// The gap is clamped to the band, so ABOVE + BELOW always = collateral_per_pair.
+/// Returns None only on arithmetic overflow.
+pub fn payouts_for_gap(
+    floor_bn: i64,
+    cap_bn: i64,
+    collateral_per_pair: u64,
+    gap_tenths: i64,
+) -> Option<(u64, u64)> {
+    let floor = floor_bn.checked_mul(10)?;
+    let cap = cap_bn.checked_mul(10)?;
+    let clamped = gap_tenths.clamp(floor, cap);
+    let above_tenths = clamped.checked_sub(floor)? as u64;
+    // $1 per $1bn = 1_000_000 USDC units per $bn = 100_000 per tenth.
+    let above = above_tenths.checked_mul(crate::constants::USDC_UNITS_PER_BN / 10)?;
+    let below = collateral_per_pair.checked_sub(above)?;
+    Some((above, below))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::payouts_for_gap;
+    const USDC: u64 = 1_000_000;
+    const PAIR: u64 = 2_000 * USDC;
+
+    #[test]
+    fn on_target_pays_half_each() {
+        assert_eq!(payouts_for_gap(-1000, 1000, PAIR, 0), Some((1_000 * USDC, 1_000 * USDC)));
+    }
+
+    #[test]
+    fn below_target() {
+        // Gap -$500.0bn: ABOVE $500, BELOW $1,500.
+        assert_eq!(payouts_for_gap(-1000, 1000, PAIR, -5_000), Some((500 * USDC, 1_500 * USDC)));
+    }
+
+    #[test]
+    fn fractional_gap() {
+        // Gap +$130.1bn: ABOVE $1,130.10, BELOW $869.90.
+        assert_eq!(payouts_for_gap(-1000, 1000, PAIR, 1_301), Some((1_130_100_000, 869_900_000)));
+    }
+
+    #[test]
+    fn clamped_at_the_edges() {
+        assert_eq!(payouts_for_gap(-1000, 1000, PAIR, -14_593), Some((0, PAIR)));
+        assert_eq!(payouts_for_gap(-1000, 1000, PAIR, 99_999), Some((PAIR, 0)));
+    }
 }
