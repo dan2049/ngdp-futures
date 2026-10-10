@@ -5,7 +5,8 @@
 //! 1. Creates a mock USDC mint (6 decimals) that YOU control, and mints you 100,000.
 //! 2. initialize_config  (you = admin and reporter)
 //! 3. create_target_table (the 41 locked Level Targets)
-//! 4. create_market for Q3 2026 .. Q3 2027 with a +/- $1,000bn band.
+//! 4. create_market for Q3 2026 with a +/- $1,000bn band and a pool funded with
+//!    POOL_USDC mock USDC, opening at START_GAP_BN. (Mints that much extra mock USDC first.)
 //!
 //! Uses your wallet at ~/.config/solana/id.json. Mock-USDC keys go in ./.devnet/ (gitignored).
 
@@ -29,17 +30,16 @@ const RPC_URL: &str = "https://api.devnet.solana.com";
 const USDC: u64 = 1_000_000;
 
 /// (quarter_index, label, scheduled BEA advance-estimate release, unix seconds UTC)
-/// Q3 2026 is BEA's published date (29 Oct 2026, 8:30am ET). 2027 dates are estimates
-/// (last Thursday of the following month); they only affect the 365-day fallback deadline.
-const MARKETS: [(u16, &str, i64); 5] = [
+/// Q3 2026 is BEA's published date (29 Oct 2026, 8:30am ET).
+const MARKETS: [(u16, &str, i64); 1] = [
     (4, "Q3 2026", 1_793_277_000), // Thu 29 Oct 2026
-    (5, "Q4 2026", 1_801_143_000), // Thu 28 Jan 2027 (est.)
-    (6, "Q1 2027", 1_809_001_800), // Thu 29 Apr 2027 (est.)
-    (7, "Q2 2027", 1_816_864_200), // Thu 29 Jul 2027 (est.)
-    (8, "Q3 2027", 1_824_726_600), // Thu 28 Oct 2027 (est.)
 ];
 const FLOOR_BN: i64 = -1000;
 const CAP_BN: i64 = 1000;
+/// Pool funding per market. Bigger pool = each trade moves the price less.
+const POOL_USDC: u64 = 100_000;
+/// Price ($bn gap) the pool opens at. Traders move it from there.
+const START_GAP_BN: i64 = 0;
 
 fn main() {
     let rpc = RpcClient::new(RPC_URL.to_string());
@@ -119,6 +119,9 @@ fn main() {
             println!("[skip] market {} exists: {}", label, market);
             continue;
         }
+        // Mint the pool's funding into your mock-USDC account first.
+        send(&rpc, &[mint_to_ix(usdc_mint, usdc_acct, me, POOL_USDC * USDC)], &wallet, &[],
+            &format!("mint {} mock USDC for the {} pool", POOL_USDC, label));
         let ix = Instruction::new_with_bytes(
             ngdp_futures::id(),
             &ngdp_futures::instruction::CreateMarket {
@@ -126,6 +129,8 @@ fn main() {
                 floor_bn: FLOOR_BN,
                 cap_bn: CAP_BN,
                 expected_release_ts: release,
+                liquidity: POOL_USDC * USDC,
+                starting_gap_bn: START_GAP_BN,
             }
             .data(),
             ngdp_futures::accounts::CreateMarket {
@@ -133,16 +138,15 @@ fn main() {
                 config,
                 target_table,
                 market,
-                above_mint: pda(&[ABOVE_MINT_SEED, market.as_ref()]),
-                below_mint: pda(&[BELOW_MINT_SEED, market.as_ref()]),
                 vault: pda(&[VAULT_SEED, market.as_ref()]),
                 usdc_mint,
+                admin_usdc: usdc_acct,
                 token_program: token_program(),
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
         );
-        send(&rpc, &[ix], &wallet, &[], &format!("create_market {} (quarter {})", label, q));
+        send(&rpc, &[ix], &wallet, &[], &format!("create_market {} (quarter {}), pool ${} opening at {}bn", label, q, POOL_USDC, START_GAP_BN));
     }
 
     let x = |a: &Pubkey| format!("https://explorer.solana.com/address/{}?cluster=devnet", a);

@@ -4,13 +4,12 @@ use anchor_lang::prelude::*;
 #[account]
 #[derive(InitSpace)]
 pub struct Config {
-    /// Can create markets and correct reported values. (Multisig before mainnet.)
+    /// Creates markets, funds pools, corrects reported values. (Multisig before mainnet.)
     pub admin: Pubkey,
-    /// Posts the BEA advance estimate after each release.
+    /// Posts the BEA estimate after each release.
     pub reporter: Pubkey,
     /// The USDC token mint used as collateral.
     pub usdc_mint: Pubkey,
-    /// Stored so later instructions can re-derive this address cheaply.
     pub bump: u8,
 }
 
@@ -32,7 +31,6 @@ impl TargetTable {
     }
 }
 
-/// Where a market is in its life:
 /// Open -> Pending (value reported) -> Final (after the 24h window),
 /// or Open -> Fallback (no BEA estimate 365 days after the scheduled release).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
@@ -43,7 +41,12 @@ pub enum MarketState {
     Fallback,
 }
 
-/// One quarterly contract, e.g. quarter_index 5 = Q4 2026.
+/// One quarterly futures market with its own pool market maker.
+///
+/// Under the hood every contract is a fully collateralised pair: an "above" side that
+/// pays $1,000 + gap and a "below" side that pays $1,000 - gap (gap clamped to the band).
+/// Traders never see the pair: a long position is "above" units, a short is "below" units.
+/// The pool holds both sides and quotes the price.
 #[account]
 #[derive(InitSpace)]
 pub struct Market {
@@ -52,66 +55,60 @@ pub struct Market {
     /// Band in $bn, e.g. -1000 and +1000.
     pub floor_bn: i64,
     pub cap_bn: i64,
-    /// USDC base units locked per ABOVE+BELOW pair: (cap - floor) x $1.
+    /// USDC base units backing one contract's pair: (cap - floor) x $1.
     pub collateral_per_pair: u64,
     pub usdc_mint: Pubkey,
-    pub above_mint: Pubkey,
-    pub below_mint: Pubkey,
-    /// Token account holding every pair's USDC. Owned by this market.
+    /// Holds all the USDC. Owned by this market, so only the program's rules move it.
     pub vault: Pubkey,
     pub state: MarketState,
-    /// Pairs currently in existence.
-    pub total_pairs: u64,
     pub bump: u8,
-    /// Scheduled BEA advance-estimate release (unix seconds). Only used for the fallback deadline.
+    /// Scheduled BEA advance-estimate release (unix seconds). Used for the fallback deadline.
     pub expected_release_ts: i64,
-    /// Reported NGDP in tenths of $bn (e.g. 331_000 = $33,100.0bn). 0 until reported.
+    /// Reported NGDP in tenths of $bn. 0 until reported.
     pub reported_value_tenths: i64,
-    /// When the value was reported or last corrected (unix seconds).
     pub report_ts: i64,
     /// Final gap = reported - Level Target, tenths of $bn (can be negative).
     pub gap_tenths: i64,
-    /// USDC base units paid per ABOVE / BELOW token once settled.
+    /// USDC base units paid per whole contract of the above / below side once settled.
     pub above_payout: u64,
     pub below_payout: u64,
-    /// Price of the most recent ABOVE trade on the board (USDC units per token), 0 if none.
-    /// Headline: implied gap ($bn) = floor_bn + last_price / 1_000_000.
-    pub last_price: u64,
+    /// Pool balances, in millionths of a contract.
+    pub pool_above: u64,
+    pub pool_below: u64,
+    /// Extra units owned by the pool funder from setting a starting price.
+    pub lp_above: u64,
+    pub lp_below: u64,
+    /// Pairs in existence (millionths). Vault always holds total_sets x set price.
+    pub total_sets: u64,
     pub last_trade_ts: i64,
+    pub pool_withdrawn: bool,
 }
 
-/// Which way an offer on the board goes. The board only ever trades ABOVE against USDC.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
-pub enum OfferSide {
-    /// Maker escrows ABOVE tokens and wants USDC.
-    SellAbove,
-    /// Maker escrows USDC and wants ABOVE tokens.
-    BuyAbove,
+impl Market {
+    /// USDC base units per millionth-of-a-contract pair (2,000 for a +/-1000 band).
+    pub fn set_units(&self) -> u64 {
+        self.collateral_per_pair / crate::constants::UNITS_PER_CONTRACT
+    }
 }
 
-/// One standing offer on a market's board.
+/// One trader's position in one market. Never holds both sides at once:
+/// buying first closes any short, selling first closes any long.
 #[account]
 #[derive(InitSpace)]
-pub struct Offer {
+pub struct Position {
+    pub owner: Pubkey,
     pub market: Pubkey,
-    pub maker: Pubkey,
-    /// Maker's token account that receives the proceeds (USDC if selling, ABOVE if buying).
-    pub maker_receive: Pubkey,
-    /// Holds the maker's ABOVE (selling) or USDC (buying) until filled or cancelled.
-    pub escrow: Pubkey,
-    pub side: OfferSide,
-    /// USDC units per ABOVE token (e.g. 600_000_000 = $600).
-    pub price: u64,
-    /// ABOVE tokens still available on this offer.
-    pub quantity: u64,
-    /// Chosen by the maker so one maker can have many offers.
-    pub offer_id: u64,
+    /// Long size, millionths of a contract.
+    pub above: u64,
+    /// Short size, millionths of a contract.
+    pub below: u64,
+    /// Total USDC paid in minus received, base units (for showing profit and loss).
+    pub net_paid: i64,
     pub bump: u8,
 }
 
-/// Payout per ABOVE and BELOW token for a given gap.
-/// The gap is clamped to the band, so ABOVE + BELOW always = collateral_per_pair.
-/// Returns None only on arithmetic overflow.
+/// Payout per whole ABOVE (long) and BELOW (short) contract for a given gap.
+/// The gap is clamped to the band, so the two always add up to collateral_per_pair.
 pub fn payouts_for_gap(
     floor_bn: i64,
     cap_bn: i64,
@@ -141,13 +138,11 @@ mod tests {
 
     #[test]
     fn below_target() {
-        // Gap -$500.0bn: ABOVE $500, BELOW $1,500.
         assert_eq!(payouts_for_gap(-1000, 1000, PAIR, -5_000), Some((500 * USDC, 1_500 * USDC)));
     }
 
     #[test]
     fn fractional_gap() {
-        // Gap +$130.1bn: ABOVE $1,130.10, BELOW $869.90.
         assert_eq!(payouts_for_gap(-1000, 1000, PAIR, 1_301), Some((1_130_100_000, 869_900_000)));
     }
 

@@ -10,7 +10,7 @@ pub enum ErrorCode {
     InvalidBand,
     #[msg("Amount must be greater than zero")]
     ZeroAmount,
-    #[msg("This market is not open for minting or redeeming pairs")]
+    #[msg("This market is closed for trading")]
     MarketNotOpen,
     #[msg("Arithmetic overflow")]
     MathOverflow,
@@ -28,12 +28,16 @@ pub enum ErrorCode {
     InvalidValue,
     #[msg("Release URL is too long")]
     UrlTooLong,
-    #[msg("Price must be above zero and no more than the collateral per pair")]
-    InvalidPrice,
-    #[msg("Token account or mint does not match this offer")]
-    WrongMint,
-    #[msg("You cannot fill your own offer")]
-    SelfFill,
-    #[msg("Not enough left on this offer")]
-    NotEnoughRemaining,
+    #[msg("Side must be buy (0) or sell (1)")]
+    InvalidSide,
+    #[msg("The price moved past your limit; nothing was traded")]
+    SlippageExceeded,
+    #[msg("Liquidity must be at least one contract set and a whole number of sets")]
+    InvalidLiquidity,
+    #[msg("Starting price must be strictly inside the band")]
+    InvalidStartingPrice,
+    #[msg("Nothing to claim")]
+    NothingToClaim,
+    #[msg("The pool has already been withdrawn")]
+    AlreadyWithdrawn,
 }

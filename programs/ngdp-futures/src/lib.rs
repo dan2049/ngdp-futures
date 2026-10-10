@@ -1,3 +1,4 @@
+pub mod amm;
 pub mod constants;
 pub mod error;
 pub mod instructions;
@@ -11,17 +12,13 @@ pub use state::*;
 
 declare_id!("5B6CZuXEbcah5BHcp7N8KxacPQsEhKLE3N4RweXNga8W");
 
-/// NGDP Level Target futures. The public "menu" of instructions.
+/// NGDP Level Target futures: buy or sell the expected gap, priced by a pool.
 #[program]
 pub mod ngdp_futures {
     use super::*;
 
     /// One-time setup: sets admin (the caller), reporter and USDC mint.
-    pub fn initialize_config(
-        ctx: Context<InitializeConfig>,
-        reporter: Pubkey,
-        usdc_mint: Pubkey,
-    ) -> Result<()> {
+    pub fn initialize_config(ctx: Context<InitializeConfig>, reporter: Pubkey, usdc_mint: Pubkey) -> Result<()> {
         crate::instructions::initialize_config::handle_initialize_config(ctx, reporter, usdc_mint)
     }
 
@@ -30,36 +27,32 @@ pub mod ngdp_futures {
         crate::instructions::create_target_table::handle_create_target_table(ctx)
     }
 
-    /// Admin only: open a quarter's market with its band (e.g. -1000, +1000 $bn)
-    /// and the scheduled BEA advance-estimate release time (unix seconds).
+    /// Admin only: open a quarter's market and fund its pool.
     pub fn create_market(
         ctx: Context<CreateMarket>,
         quarter_index: u16,
         floor_bn: i64,
         cap_bn: i64,
         expected_release_ts: i64,
+        liquidity: u64,
+        starting_gap_bn: i64,
     ) -> Result<()> {
         crate::instructions::create_market::handle_create_market(
-            ctx,
-            quarter_index,
-            floor_bn,
-            cap_bn,
-            expected_release_ts,
+            ctx, quarter_index, floor_bn, cap_bn, expected_release_ts, liquidity, starting_gap_bn,
         )
     }
 
-    /// Anyone: deposit USDC, receive `amount` ABOVE + `amount` BELOW.
-    pub fn mint_pair(ctx: Context<MintPair>, amount: u64) -> Result<()> {
-        crate::instructions::mint_pair::handle_mint_pair(ctx, amount)
+    /// Anyone: create your position record for a market (once).
+    pub fn open_position(ctx: Context<OpenPosition>) -> Result<()> {
+        crate::instructions::open_position::handle_open_position(ctx)
     }
 
-    /// Anyone: return `amount` ABOVE + `amount` BELOW, get the USDC back.
-    pub fn redeem_pair(ctx: Context<RedeemPair>, amount: u64) -> Result<()> {
-        crate::instructions::redeem_pair::handle_redeem_pair(ctx, amount)
+    /// Anyone: buy (0) or sell (1) contracts against the pool, with a price limit.
+    pub fn trade(ctx: Context<Trade>, side: u8, quantity: u64, max_net_cost: i64) -> Result<()> {
+        crate::instructions::trade::handle_trade(ctx, side, quantity, max_net_cost)
     }
 
-    /// Reporter: post the first BEA estimate for the quarter (tenths of $bn) and its URL.
-    /// Starts the 24-hour challenge window.
+    /// Reporter: post the first BEA estimate for the quarter. Starts the 24-hour window.
     pub fn report_value(ctx: Context<ReportValue>, value_tenths: i64, release_url: String) -> Result<()> {
         crate::instructions::settlement::handle_report_value(ctx, value_tenths, release_url)
     }
@@ -69,7 +62,7 @@ pub mod ngdp_futures {
         crate::instructions::settlement::handle_correct_value(ctx, value_tenths)
     }
 
-    /// Anyone, 24h after the last report/correction: lock the value and compute payouts.
+    /// Anyone, 24h after the last report/correction: lock the value and set payouts.
     pub fn finalise(ctx: Context<Finalise>) -> Result<()> {
         crate::instructions::settlement::handle_finalise(ctx)
     }
@@ -79,30 +72,13 @@ pub mod ngdp_futures {
         crate::instructions::settlement::handle_fallback_settle(ctx)
     }
 
-    /// Token holders, after settlement: burn ABOVE and/or BELOW for their USDC payout.
-    pub fn settle_redeem(ctx: Context<SettleRedeem>, above_amount: u64, below_amount: u64) -> Result<()> {
-        crate::instructions::settle_redeem::handle_settle_redeem(ctx, above_amount, below_amount)
+    /// Anyone with a position, after settlement: collect the payout.
+    pub fn claim(ctx: Context<Claim>) -> Result<()> {
+        crate::instructions::claim::handle_claim(ctx)
     }
 
-    /// Anyone: post an offer to sell or buy `quantity` ABOVE at `price` USDC units each.
-    /// The ABOVE (selling) or USDC (buying) is locked in escrow until filled or cancelled.
-    pub fn post_offer(
-        ctx: Context<PostOffer>,
-        offer_id: u64,
-        side: OfferSide,
-        price: u64,
-        quantity: u64,
-    ) -> Result<()> {
-        crate::instructions::offers::handle_post_offer(ctx, offer_id, side, price, quantity)
-    }
-
-    /// Anyone except the maker: take all or part of an offer.
-    pub fn fill_offer(ctx: Context<FillOffer>, quantity: u64) -> Result<()> {
-        crate::instructions::offers::handle_fill_offer(ctx, quantity)
-    }
-
-    /// Maker only: take back whatever is left in escrow and close the offer. Works in any market state.
-    pub fn cancel_offer(ctx: Context<CancelOffer>) -> Result<()> {
-        crate::instructions::offers::handle_cancel_offer(ctx)
+    /// Admin, after settlement: take out what the pool's holdings are worth.
+    pub fn withdraw_pool(ctx: Context<WithdrawPool>) -> Result<()> {
+        crate::instructions::withdraw_pool::handle_withdraw_pool(ctx)
     }
 }

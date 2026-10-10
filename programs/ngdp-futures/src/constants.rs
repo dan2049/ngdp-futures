@@ -31,20 +31,31 @@ pub const LEVEL_TARGETS: [i64; NUM_TARGETS] = [
     506_554,                            // Q3 2035
 ];
 
-/// Seeds for each quarter's market and the accounts it controls.
+/// Seed for each quarter's pool market. ("amm_market" so these never collide with
+/// the earlier token-pair markets still sitting on devnet.)
 #[constant]
-pub const MARKET_SEED: &[u8] = b"market";
-#[constant]
-pub const ABOVE_MINT_SEED: &[u8] = b"above";
-#[constant]
-pub const BELOW_MINT_SEED: &[u8] = b"below";
+pub const MARKET_SEED: &[u8] = b"amm_market";
+/// Seed for the market's USDC vault.
 #[constant]
 pub const VAULT_SEED: &[u8] = b"vault";
+/// Seed for each trader's position in a market.
+#[constant]
+pub const POSITION_SEED: &[u8] = b"position";
 
 /// USDC has 6 decimals: 1 USDC = 1_000_000 base units.
-/// Multiplier is $1 per $1bn of gap, so 1 $bn of band = 1_000_000 base units.
+/// Multiplier is $1 per $1bn of gap, so 1 $bn = 1_000_000 USDC base units.
 #[constant]
 pub const USDC_UNITS_PER_BN: u64 = 1_000_000;
+
+/// Positions are counted in millionths of a contract, so people can trade 0.5 or 2.25.
+#[constant]
+pub const UNITS_PER_CONTRACT: u64 = 1_000_000;
+
+/// Trade directions.
+#[constant]
+pub const SIDE_BUY: u8 = 0; // "NGDP lands higher than the price"
+#[constant]
+pub const SIDE_SELL: u8 = 1; // "NGDP lands lower than the price"
 
 /// After a value is reported, anyone has 24 hours to check it against BEA
 /// before it can be finalised. A correction by the admin restarts the 24 hours.
@@ -58,9 +69,3 @@ pub const FALLBACK_DELAY_SECS: i64 = 365 * 24 * 60 * 60;
 
 /// Longest release URL the reporter may attach (it goes in the transaction log).
 pub const MAX_URL_LEN: usize = 200;
-
-/// Seeds for offers on the board and the escrow account each offer controls.
-#[constant]
-pub const OFFER_SEED: &[u8] = b"offer";
-#[constant]
-pub const ESCROW_SEED: &[u8] = b"escrow";

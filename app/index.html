@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>NGDP Level Target Futures</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600;800&display=swap">
+<style>
+/* Layout: a single trading desk column. Summary list of quarterly markets on top,
+   the selected market's book and actions below. Public Sans = US federal typeface (fits BEA data). */
+:root {
+  --bg: #eef1ee;
+  --surface: #fbfcfb;
+  --ink: #15201b;
+  --muted: #5a6761;
+  --line: #d3dbd6;
+  --accent: #1c6a51;          /* treasury green */
+  --accent-ink: #ffffff;
+  --above: #1f6a8a;           /* gap above target */
+  --below: #a8482a;           /* gap below target */
+  --warn: #8a6a12;
+  --warn-bg: #f6efd9;
+  --err: #a3261f;
+  --err-bg: #f8e3e0;
+  --ok-bg: #e2f1ea;
+  --font-ui: "Public Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1412; --surface: #151d1a; --ink: #e3ebe7; --muted: #92a19a; --line: #27322e;
+    --accent: #4dbb91; --accent-ink: #0b1411; --above: #62b6d6; --below: #e38a62;
+    --warn: #e2c26a; --warn-bg: #2c2615; --err: #f08a80; --err-bg: #331a18; --ok-bg: #16291f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1412; --surface: #151d1a; --ink: #e3ebe7; --muted: #92a19a; --line: #27322e;
+  --accent: #4dbb91; --accent-ink: #0b1411; --above: #62b6d6; --below: #e38a62;
+  --warn: #e2c26a; --warn-bg: #2c2615; --err: #f08a80; --err-bg: #331a18; --ok-bg: #16291f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font: 15px/1.5 var(--font-ui);
+  padding-inline: 16px; padding-block: 0 48px;
+}
+.wrap { max-width: 1040px; margin-inline: auto; display: grid; gap: 20px; }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+button, input, select { font: inherit; }
+a { color: var(--accent); }
+
+/* Header */
+header.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
+  padding-block: 14px; border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.brand h1 { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; }
+.tag { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--warn); background: var(--warn-bg); padding: 2px 8px; border-radius: 3px; font-weight: 600; }
+.wallet { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wallet .bal { font-size: 13px; color: var(--muted); }
+
+.btn {
+  border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink);
+  padding: 7px 14px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 14px;
+}
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn.small { padding: 4px 10px; font-size: 13px; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn:focus-visible, input:focus-visible, select:focus-visible, .mrow:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Explainer */
+.intro { display: grid; gap: 6px; max-width: 70ch; color: var(--muted); }
+.intro strong { color: var(--ink); }
+
+/* Status line */
+#status { font-size: 14px; padding: 10px 12px; border-radius: 4px; }
+#status.info { background: var(--ok-bg); }
+#status.error { background: var(--err-bg); color: var(--err); }
+#status.warn { background: var(--warn-bg); color: var(--warn); }
+
+/* Market list */
+.markets { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.mhead, .mrow {
+  display: grid; grid-template-columns: 7rem 8.5rem minmax(9rem, 1fr) minmax(10rem, 1.4fr) 6.5rem;
+  gap: 14px; align-items: center; padding: 12px 16px;
+}
+.mhead { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); }
+.mrow { border-bottom: 1px solid var(--line); cursor: pointer; }
+.mrow:last-child { border-bottom: 0; }
+.mrow:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.mrow.sel { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.q { font-weight: 800; font-size: 16px; }
+.q small { display: block; font-weight: 400; font-size: 12px; color: var(--muted); }
+.gapbig { font-size: 20px; font-weight: 600; }
+.gapbig small { display: block; font-family: var(--font-ui); font-size: 12px; font-weight: 400; color: var(--muted); }
+.pos { color: var(--above); } .neg { color: var(--below); } .flat { color: var(--muted); }
+.pill { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); justify-self: start; white-space: nowrap; }
+.pill.open { color: var(--accent); border-color: var(--accent); }
+.pill.pending { color: var(--warn); border-color: var(--warn); }
+.pill.final { color: var(--ink); background: var(--line); }
+
+/* Band gauge: -1000 .. +1000 $bn */
+.gauge { position: relative; height: 26px; }
+.gauge .track { position: absolute; left: 0; right: 0; top: 12px; height: 2px; background: var(--line); }
+.gauge .zero { position: absolute; left: 50%; top: 5px; width: 1px; height: 16px; background: var(--muted); }
+.gauge .mark { position: absolute; top: 6px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; border: 2px solid var(--surface); }
+.gauge .lbl { position: absolute; top: 14px; font-size: 10px; color: var(--muted); font-family: var(--font-num); }
+.gauge .lbl.l { left: 0; } .gauge .lbl.r { right: 0; }
+
+@media (max-width: 760px) {
+  .mhead { display: none; }
+  .mrow { grid-template-columns: 1fr auto; row-gap: 6px; }
+  .mrow .c-target { display: none; }
+  .mrow .c-gauge { grid-column: 1 / -1; }
+}
+
+/* Detail */
+.detail { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 20px; display: grid; gap: 22px; }
+.dhead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; align-items: flex-end; }
+.dhead h2 { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
+.headline { font-size: 17px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px 20px; }
+.stat { display: grid; gap: 2px; }
+.stat .k { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.stat .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 15px; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.cols > * { min-width: 0; }
+@media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+section.block { display: grid; gap: 10px; align-content: start; }
+section.block h3 { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.hint { font-size: 13px; color: var(--muted); margin: 0; }
+
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { text-align: left; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 7px 8px; border-bottom: 1px solid var(--line); font-family: var(--font-num); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.act { text-align: right; font-family: var(--font-ui); }
+tr.empty td { color: var(--muted); font-family: var(--font-ui); white-space: normal; }
+
+.form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.field { display: grid; gap: 3px; }
+.field label { font-size: 12px; color: var(--muted); }
+.field input, .field select {
+  background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 4px;
+  padding: 6px 8px; width: 8.5rem; font-family: var(--font-num);
+}
+.field select { font-family: var(--font-ui); width: 11rem; }
+.calc { font-size: 13px; color: var(--muted); }
+
+.posgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.posgrid .stat .v { font-size: 18px; }
+
+footer { font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
+code { font-family: var(--font-num); font-size: 12.5px; word-break: break-all; }
+@media (prefers-reduced-motion: no-preference) { .mark { transition: left 0.4s ease; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>NGDP Level Target Futures</h1>
+      <span class="tag">Solana devnet · test money only</span>
+    </div>
+    <div class="wallet">
+      <span class="bal num" id="walletBal"></span>
+      <button class="btn" id="connectBtn" type="button">Connect Phantom</button>
+    </div>
+  </header>
+
+  <div class="intro">
+    <p style="margin:0">Each contract settles on how far the <strong>BEA advance estimate of US nominal GDP</strong> lands from a <strong>5% Level Target</strong> path, starting at $31,098.0bn in Q3 2025. ABOVE pays more the higher NGDP lands; BELOW pays more the lower it lands. One ABOVE + one BELOW is always worth $2,000.</p>
+  </div>
+
+  <div id="status" class="info">Loading markets from Solana devnet…</div>
+
+  <div class="markets" role="list" aria-label="Quarterly markets">
+    <div class="mhead" aria-hidden="true">
+      <span>Quarter</span><span>Level Target</span><span>Market expects</span><span>Gap vs target (±$1,000bn band)</span><span>Status</span>
+    </div>
+    <div id="marketRows"></div>
+  </div>
+
+  <div class="detail" id="detail" hidden></div>
+
+  <footer>
+    <span>Program <code id="progId"></code> on Solana devnet. Mock USDC has no value.</span>
+    <span>Prices: ABOVE trades between $0 and $2,000. Implied gap ($bn) = ABOVE price − 1,000. Not an offer of financial products.</span>
+  </footer>
+</div>
+
+<script src="https://unpkg.com/@solana/web3.js@1.98.0/lib/index.iife.min.js"></script>
+<script>
+"use strict";
+// ================= Configuration =================
+const RPC_URL = "https://api.devnet.solana.com";
+const PROGRAM = "5B6CZuXEbcah5BHcp7N8KxacPQsEhKLE3N4RweXNga8W";
+const USDC_MINT_STR = "ByNbHEDE4YyAgZ218JJX4swNnAdhiavAorefnfoGRqeV";
+const TOKEN_PROGRAM_STR = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const ATA_PROGRAM_STR = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+const USDC = 1000000n;       // base units per USDC
+const REFRESH_MS = 20000;
+const CHALLENGE_WINDOW = 24 * 3600;
+const FALLBACK_DELAY = 365 * 24 * 3600;
+
+// Discriminators, copied from target/idl/ngdp_futures.json
+const IX = {
+  mint_pair: [19,149,94,110,181,186,33,107],
+  redeem_pair: [157,102,125,192,31,48,165,114],
+  post_offer: [73,150,193,114,200,133,74,58],
+  fill_offer: [83,15,200,85,160,80,164,61],
+  cancel_offer: [92,203,223,40,92,89,53,119],
+  finalise: [197,63,114,249,245,72,39,132],
+  fallback_settle: [113,184,227,181,144,103,26,49],
+  settle_redeem: [249,101,149,103,27,38,182,198],
+};
+const ACC = {
+  Market: [219,190,213,55,0,227,198,154],
+  Offer: [215,88,60,71,170,162,73,229],
+  TargetTable: [218,165,71,24,123,17,84,186],
+};
+const MARKET_SIZE = 236, OFFER_SIZE = 162;
+const STATES = ["Open", "Pending", "Final", "Fallback"];
+
+// ================= Byte helpers =================
+const te = new TextEncoder();
+function u8(n) { return Uint8Array.of(n); }
+function u16le(n) { const b = new Uint8Array(2); new DataView(b.buffer).setUint16(0, n, true); return b; }
+function u64le(n) { const b = new Uint8Array(8); new DataView(b.buffer).setBigUint64(0, BigInt(n), true); return b; }
+function cat(...parts) {
+  const out = new Uint8Array(parts.reduce((s, p) => s + p.length, 0));
+  let o = 0; for (const p of parts) { out.set(p, o); o += p.length; } return out;
+}
+function view(d) { return new DataView(d.buffer, d.byteOffset, d.byteLength); }
+function hasDisc(d, disc) { for (let i = 0; i < 8; i++) if (d[i] !== disc[i]) return false; return true; }
+
+// ================= App state =================
+let W, conn, PROGRAM_ID, USDC_MINT, TOKEN_PROGRAM, ATA_PROGRAM;
+let provider = null, me = null;
+let markets = [];            // parsed Market accounts, sorted by quarter
+let offers = [];             // parsed Offer accounts
+let targets = null;          // Level Targets in tenths of $bn
+let balances = {};           // mint base58 -> BigInt balance of my ATA
+let solBalance = null;
+let selectedQ = null;
+let busy = false;
+
+const $ = (id) => document.getElementById(id);
+function setStatus(msg, kind = "info") { const s = $("status"); s.textContent = msg; s.className = kind; s.hidden = !msg; }
+
+function pda(seeds) { return W.PublicKey.findProgramAddressSync(seeds, PROGRAM_ID)[0]; }
+function ata(owner, mint) {
+  return W.PublicKey.findProgramAddressSync([owner.toBytes(), TOKEN_PROGRAM.toBytes(), mint.toBytes()], ATA_PROGRAM)[0];
+}
+
+// ================= Parsing =================
+function pk(d, off) { return new W.PublicKey(d.slice(off, off + 32)); }
+function parseMarket(address, d) {
+  const v = view(d);
+  return {
+    address,
+    q: v.getUint16(8, true),
+    floor: Number(v.getBigInt64(10, true)),
+    cap: Number(v.getBigInt64(18, true)),
+    collateral: v.getBigUint64(26, true),
+    usdcMint: pk(d, 34), aboveMint: pk(d, 66), belowMint: pk(d, 98), vault: pk(d, 130),
+    state: d[162],
+    totalPairs: v.getBigUint64(163, true),
+    expectedRelease: Number(v.getBigInt64(172, true)),
+    reported: Number(v.getBigInt64(180, true)),
+    reportTs: Number(v.getBigInt64(188, true)),
+    gap: Number(v.getBigInt64(196, true)),
+    abovePayout: v.getBigUint64(204, true),
+    belowPayout: v.getBigUint64(212, true),
+    lastPrice: v.getBigUint64(220, true),
+    lastTradeTs: Number(v.getBigInt64(228, true)),
+  };
+}
+function parseOffer(address, d) {
+  const v = view(d);
+  return {
+    address,
+    market: pk(d, 8), maker: pk(d, 40), makerReceive: pk(d, 72), escrow: pk(d, 104),
+    side: d[136] === 0 ? "sell" : "buy",
+    price: v.getBigUint64(137, true),
+    qty: v.getBigUint64(145, true),
+    id: v.getBigUint64(153, true),
+  };
+}
+
+// ================= Formatting =================
+function quarterLabel(n) { const k = 2 + n; return "Q" + ((k % 4) + 1) + " " + (2025 + Math.floor(k / 4)); }
+function fmtBnTenths(t) { return "$" + (t / 10).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "bn"; }
+function fmtUsd(units) {
+  const n = Number(units) / 1e6;
+  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
+}
+function gapFromPrice(m, price) { return m.floor + Number(price) / 1e6; }   // $bn
+function fmtGap(bn) {
+  if (bn === null || bn === undefined || Number.isNaN(bn)) return "—";
+  const a = Math.abs(bn).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+  if (Math.abs(bn) < 0.05) return "On target";
+  return (bn > 0 ? "+" : "−") + "$" + a + "bn";
+}
+function gapWords(bn) {
+  if (bn === null) return "";
+  if (Math.abs(bn) < 0.05) return "on the Level Target";
+  return (bn > 0 ? "above" : "below") + " the Level Target";
+}
+function gapClass(bn) { return bn === null ? "flat" : bn > 0.05 ? "pos" : bn < -0.05 ? "neg" : "flat"; }
+function fmtDate(ts) { return new Date(ts * 1000).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }); }
+function fmtAgo(ts) {
+  const s = Math.floor(Date.now() / 1000) - ts;
+  if (s < 90) return "just now";
+  if (s < 5400) return Math.round(s / 60) + " min ago";
+  if (s < 172800) return Math.round(s / 3600) + " h ago";
+  return Math.round(s / 86400) + " days ago";
+}
+function short(pkey) { const s = pkey.toBase58(); return s.slice(0, 4) + "…" + s.slice(-4); }
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+// Best bid / ask and the headline number for a market
+function book(m) {
+  const mine = offers.filter((o) => o.market.equals(m.address) && o.qty > 0n);
+  const asks = mine.filter((o) => o.side === "sell").sort((a, b) => (a.price < b.price ? -1 : a.price > b.price ? 1 : 0));
+  const bids = mine.filter((o) => o.side === "buy").sort((a, b) => (a.price > b.price ? -1 : a.price < b.price ? 1 : 0));
+  return { asks, bids };
+}
+function headline(m) {
+  if (m.state === 2) return { bn: m.gap / 10, basis: "settled" };
+  if (m.state === 3) return { bn: 0, basis: "fallback" };
+  const { asks, bids } = book(m);
+  if (m.lastPrice > 0n) return { bn: gapFromPrice(m, m.lastPrice), basis: "last trade " + fmtAgo(m.lastTradeTs) };
+  if (asks.length && bids.length) return { bn: gapFromPrice(m, (asks[0].price + bids[0].price) / 2n), basis: "mid of best bid & offer" };
+  if (bids.length) return { bn: gapFromPrice(m, bids[0].price), basis: "best bid only" };
+  if (asks.length) return { bn: gapFromPrice(m, asks[0].price), basis: "best offer only" };
+  return { bn: null, basis: "no trades or offers yet" };
+}
+
+// ================= Loading =================
+async function loadAll() {
+  const [marketAccs, offerAccs, tableInfo] = await Promise.all([
+    conn.getProgramAccounts(PROGRAM_ID, { filters: [{ dataSize: MARKET_SIZE }] }),
+    conn.getProgramAccounts(PROGRAM_ID, { filters: [{ dataSize: OFFER_SIZE }] }),
+    conn.getAccountInfo(pda([te.encode("target_table")])),
+  ]);
+  markets = marketAccs.filter((a) => hasDisc(a.account.data, ACC.Market))
+    .map((a) => parseMarket(a.pubkey, a.account.data)).sort((a, b) => a.q - b.q);
+  offers = offerAccs.filter((a) => hasDisc(a.account.data, ACC.Offer)).map((a) => parseOffer(a.pubkey, a.account.data));
+  if (tableInfo && hasDisc(tableInfo.data, ACC.TargetTable)) {
+    const v = view(tableInfo.data); targets = [];
+    for (let i = 0; i < 41; i++) targets.push(Number(v.getBigInt64(8 + i * 8, true)));
+  }
+  if (me) await loadWallet();
+}
+async function loadWallet() {
+  const mints = [USDC_MINT];
+  for (const m of markets) mints.push(m.aboveMint, m.belowMint);
+  const atas = mints.map((mint) => ata(me, mint));
+  const [infos, lamports] = await Promise.all([conn.getMultipleAccountsInfo(atas), conn.getBalance(me)]);
+  balances = {};
+  infos.forEach((info, i) => {
+    balances[mints[i].toBase58()] = info && info.data.length >= 72 ? view(info.data).getBigUint64(64, true) : 0n;
+  });
+  solBalance = lamports / 1e9;
+}
+function bal(mint) { return balances[mint.toBase58()] || 0n; }
+
+async function refresh(quiet) {
+  try {
+    await loadAll();
+    render();
+    if (!quiet) setStatus(markets.length ? "" : "No markets found on devnet yet.", markets.length ? "info" : "warn");
+  } catch (e) {
+    console.error(e);
+    setStatus("Could not reach Solana devnet: " + (e.message || e) + ". Retrying in 20 seconds.", "error");
+  }
+}
+
+// ================= Rendering =================
+function render() {
+  // wallet
+  if (me) {
+    $("connectBtn").textContent = short(me);
+    $("walletBal").textContent = (solBalance ?? 0).toFixed(3) + " SOL · " + fmtUsd(bal(USDC_MINT)) + " mock USDC";
+  }
+  // market rows
+  $("marketRows").innerHTML = markets.map((m) => {
+    const h = headline(m);
+    const t = targets ? targets[m.q] : null;
+    const clamped = h.bn === null ? null : Math.max(m.floor, Math.min(m.cap, h.bn));
+    const pct = clamped === null ? null : ((clamped - m.floor) / (m.cap - m.floor)) * 100;
+    const col = gapClass(h.bn) === "pos" ? "var(--above)" : gapClass(h.bn) === "neg" ? "var(--below)" : "var(--muted)";
+    const pill = ["open", "pending", "final", "final"][m.state];
+    return `<div class="mrow${m.q === selectedQ ? " sel" : ""}" role="listitem" tabindex="0" data-q="${m.q}">
+      <div class="q">${quarterLabel(m.q)}<small>BEA ${fmtDate(m.expectedRelease)}</small></div>
+      <div class="num c-target">${t ? fmtBnTenths(t) : "—"}</div>
+      <div class="gapbig num ${gapClass(h.bn)}">${fmtGap(h.bn)}<small>${esc(h.basis)}</small></div>
+      <div class="c-gauge"><div class="gauge" aria-label="Implied gap on a scale from ${m.floor} to +${m.cap} billion">
+        <div class="track"></div><div class="zero"></div>
+        <span class="lbl l">${m.floor}</span><span class="lbl r">+${m.cap}</span>
+        ${pct === null ? "" : `<div class="mark" style="left:${pct}%;background:${col}"></div>`}
+      </div></div>
+      <span class="pill ${pill}">${STATES[m.state]}</span>
+    </div>`;
+  }).join("");
+  document.querySelectorAll(".mrow").forEach((row) => {
+    const pick = () => { selectedQ = Number(row.dataset.q); render(); $("detail").scrollIntoView({ behavior: "smooth", block: "start" }); };
+    row.addEventListener("click", pick);
+    row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+  });
+  renderDetail();
+}
+
+function renderDetail() {
+  const d = $("detail");
+  const m = markets.find((x) => x.q === selectedQ);
+  if (!m) { d.hidden = true; return; }
+  d.hidden = false;
+  // keep typed values across re-renders
+  const keep = {};
+  d.querySelectorAll("input,select").forEach((el) => { if (el.id) keep[el.id] = el.value; });
+
+  const h = headline(m);
+  const t = targets ? targets[m.q] : null;
+  const { asks, bids } = book(m);
+  const now = Math.floor(Date.now() / 1000);
+  const open = m.state === 0;
+  const aboveBal = me ? bal(m.aboveMint) : 0n, belowBal = me ? bal(m.belowMint) : 0n;
+  const myOffers = me ? offers.filter((o) => o.market.equals(m.address) && o.maker.equals(me)) : [];
+
+  const rows = (list, side) => list.length ? list.map((o) => `<tr>
+      <td>${fmtUsd(o.price)}</td><td class="${gapClass(gapFromPrice(m, o.price))}">${fmtGap(gapFromPrice(m, o.price))}</td>
+      <td>${o.qty}</td>
+      <td class="act">${open && me && !o.maker.equals(me)
+        ? `<button class="btn small ${side === "sell" ? "" : "ghost"}" data-fill="${o.address.toBase58()}">${side === "sell" ? "Buy ABOVE" : "Go short"}</button>`
+        : me && o.maker.equals(me) ? '<span class="hint">yours</span>' : ""}</td></tr>`).join("")
+    : `<tr class="empty"><td colspan="4">No ${side === "sell" ? "offers to sell ABOVE" : "bids for ABOVE"} yet.</td></tr>`;
+
+  let settleBlock = "";
+  if (m.state === 1) {
+    const ready = now >= m.reportTs + CHALLENGE_WINDOW;
+    settleBlock = `<section class="block"><h3>Settlement pending</h3>
+      <p class="hint">BEA reported <strong class="num">${fmtBnTenths(m.reported)}</strong> on ${fmtDate(m.reportTs)}.
+      ${ready ? "The 24-hour check is over; anyone can finalise." : "It can be finalised after " + new Date((m.reportTs + CHALLENGE_WINDOW) * 1000).toLocaleString("en-AU") + "."}</p>
+      <div><button class="btn" id="finaliseBtn" type="button" ${ready && me ? "" : "disabled"}>Finalise</button></div></section>`;
+  } else if (m.state >= 2) {
+    settleBlock = `<section class="block"><h3>Settled</h3>
+      <p class="hint">${m.state === 2
+        ? `BEA reported ${fmtBnTenths(m.reported)} against a target of ${t ? fmtBnTenths(t) : "—"}: a gap of ${fmtGap(m.gap / 10)}.`
+        : "No BEA estimate was reported within 365 days, so the market settled at the midpoint."}
+      Each ABOVE pays <strong class="num">${fmtUsd(m.abovePayout)}</strong>, each BELOW pays <strong class="num">${fmtUsd(m.belowPayout)}</strong>.</p>
+      <div><button class="btn" id="settleBtn" type="button" ${me && (aboveBal > 0n || belowBal > 0n) ? "" : "disabled"}>
+        Redeem ${aboveBal} ABOVE + ${belowBal} BELOW for ${fmtUsd(aboveBal * m.abovePayout + belowBal * m.belowPayout)}</button></div></section>`;
+  } else if (now >= m.expectedRelease + FALLBACK_DELAY) {
+    settleBlock = `<section class="block"><h3>Fallback available</h3><p class="hint">Nothing was reported within 365 days of the scheduled release.</p>
+      <div><button class="btn" id="fallbackBtn" type="button" ${me ? "" : "disabled"}>Settle at midpoint</button></div></section>`;
+  }
+
+  d.innerHTML = `
+    <div class="dhead">
+      <div style="display:grid;gap:4px">
+        <h2>${quarterLabel(m.q)}</h2>
+        <div class="headline">${h.bn === null ? "No price yet. Post the first offer below."
+          : Math.abs(h.bn) < 0.05 ? `Market expects NGDP <strong>on the Level Target</strong> <span class="hint">(${esc(h.basis)})</span>`
+          : `Market expects NGDP <strong class="num ${gapClass(h.bn)}">${fmtGap(h.bn).replace(/^[+−]/, "")}</strong> ${gapWords(h.bn)} <span class="hint">(${esc(h.basis)})</span>`}</div>
+      </div>
+      <span class="pill ${["open", "pending", "final", "final"][m.state]}">${STATES[m.state]}</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><span class="k">Level Target</span><span class="v">${t ? fmtBnTenths(t) : "—"}</span></div>
+      <div class="stat"><span class="k">BEA advance estimate</span><span class="v">${fmtDate(m.expectedRelease)}</span></div>
+      <div class="stat"><span class="k">Band</span><span class="v">${m.floor} to +${m.cap} $bn</span></div>
+      <div class="stat"><span class="k">Pairs outstanding</span><span class="v">${m.totalPairs}</span></div>
+      <div class="stat"><span class="k">Last trade</span><span class="v">${m.lastPrice > 0n ? fmtUsd(m.lastPrice) : "—"}</span></div>
+    </div>
+    ${settleBlock}
+    ${me ? `<section class="block"><h3>Your position</h3><div class="posgrid">
+      <div class="stat"><span class="k">ABOVE</span><span class="v num pos">${aboveBal}</span></div>
+      <div class="stat"><span class="k">BELOW</span><span class="v num neg">${belowBal}</span></div>
+      <div class="stat"><span class="k">Mock USDC</span><span class="v num">${fmtUsd(bal(USDC_MINT))}</span></div></div>
+      ${bal(USDC_MINT) === 0n ? `<p class="hint">No mock USDC yet. Send your address to the market admin for test funds: <code>${me.toBase58()}</code></p>` : ""}
+    </section>` : `<p class="hint">Connect Phantom (set to Solana devnet) to trade.</p>`}
+    <div class="cols">
+      <section class="block"><h3>Offers to sell ABOVE (go long)</h3>
+        <div class="tablewrap"><table><thead><tr><th>Price</th><th>Implied gap</th><th>Qty</th><th></th></tr></thead><tbody>${rows(asks, "sell")}</tbody></table></div>
+      </section>
+      <section class="block"><h3>Bids for ABOVE (go short)</h3>
+        <div class="tablewrap"><table><thead><tr><th>Price</th><th>Implied gap</th><th>Qty</th><th></th></tr></thead><tbody>${rows(bids, "buy")}</tbody></table></div>
+        <p class="hint">Going short mints a pair for $2,000 and sells the ABOVE into the bid, leaving you holding BELOW. One transaction.</p>
+      </section>
+    </div>
+    ${open && me ? `<div class="cols">
+      <section class="block"><h3>Post an offer</h3>
+        <div class="form">
+          <div class="field"><label for="postSide">I want to</label>
+            <select id="postSide"><option value="buy">Buy ABOVE (long)</option><option value="sell">Sell ABOVE (short)</option></select></div>
+          <div class="field"><label for="postPrice">Price per ABOVE ($)</label><input id="postPrice" type="number" min="0.01" max="2000" step="0.01" placeholder="e.g. 550"></div>
+          <div class="field"><label for="postQty">Quantity</label><input id="postQty" type="number" min="1" step="1" value="1"></div>
+          <button class="btn" id="postBtn" type="button">Post offer</button>
+        </div>
+        <p class="calc" id="postCalc"></p>
+      </section>
+      <section class="block"><h3>Mint or redeem pairs</h3>
+        <div class="form">
+          <div class="field"><label for="pairQty">Pairs</label><input id="pairQty" type="number" min="1" step="1" value="1"></div>
+          <button class="btn" id="mintBtn" type="button">Mint ($2,000 each)</button>
+          <button class="btn ghost" id="redeemBtn" type="button">Redeem</button>
+        </div>
+        <p class="hint">A pair is 1 ABOVE + 1 BELOW, always worth exactly $2,000 in total. Redeeming returns the $2,000.</p>
+      </section>
+    </div>
+    <section class="block"><h3>Fill quantity</h3>
+      <div class="form"><div class="field"><label for="fillQty">Contracts per Buy / Go short click</label><input id="fillQty" type="number" min="1" step="1" value="1"></div></div>
+    </section>` : ""}
+    ${myOffers.length ? `<section class="block"><h3>Your offers</h3><div class="tablewrap"><table>
+      <thead><tr><th>Side</th><th>Price</th><th>Implied gap</th><th>Left</th><th></th></tr></thead><tbody>
+      ${myOffers.map((o) => `<tr><td>${o.side === "sell" ? "Sell ABOVE" : "Buy ABOVE"}</td><td>${fmtUsd(o.price)}</td>
+        <td>${fmtGap(gapFromPrice(m, o.price))}</td><td>${o.qty}</td>
+        <td class="act"><button class="btn small ghost" data-cancel="${o.address.toBase58()}">Cancel</button></td></tr>`).join("")}
+      </tbody></table></div></section>` : ""}
+  `;
+  // restore typed values
+  Object.entries(keep).forEach(([id, v]) => { const el = $(id); if (el) el.value = v; });
+  wireDetail(m);
+}
+
+function wireDetail(m) {
+  const on = (id, fn) => { const el = $(id); if (el) el.addEventListener("click", fn); };
+  const int = (id) => { const v = Math.floor(Number(($(id) || {}).value)); return Number.isFinite(v) && v > 0 ? BigInt(v) : 0n; };
+  const calc = () => {
+    const p = Number(($("postPrice") || {}).value), q = int("postQty"), el = $("postCalc");
+    if (!el) return;
+    if (!(p > 0 && p <= 2000)) { el.textContent = "Price must be between $0.01 and $2,000."; return; }
+    const g = m.floor + p;
+    el.textContent = `Implied gap ${fmtGap(g)} (${gapWords(g)}). ` +
+      ($("postSide").value === "buy" ? `Locks ${fmtUsd(BigInt(Math.round(p * 1e6)) * q)} mock USDC until filled or cancelled.`
+        : `Locks ${q} ABOVE; mints pairs first if you hold fewer.`);
+  };
+  ["postPrice", "postQty", "postSide"].forEach((id) => { const el = $(id); if (el) el.addEventListener("input", calc); });
+  calc();
+
+  on("mintBtn", () => act("Minting pairs", () => txMint(m, int("pairQty"))));
+  on("redeemBtn", () => act("Redeeming pairs", () => txRedeem(m, int("pairQty"))));
+  on("postBtn", () => {
+    const p = Number($("postPrice").value);
+    if (!(p > 0 && p <= 2000)) { setStatus("Enter a price between $0.01 and $2,000.", "warn"); return; }
+    act("Posting offer", () => txPost(m, $("postSide").value, BigInt(Math.round(p * 1e6)), int("postQty")));
+  });
+  on("finaliseBtn", () => act("Finalising", () => txSimple(m, "finalise")));
+  on("fallbackBtn", () => act("Settling at midpoint", () => txSimple(m, "fallback_settle")));
+  on("settleBtn", () => act("Redeeming", () => txSettle(m)));
+  document.querySelectorAll("[data-fill]").forEach((b) => b.addEventListener("click", () => {
+    const o = offers.find((x) => x.address.toBase58() === b.dataset.fill);
+    const q = int("fillQty") || 1n;
+    act(o.side === "sell" ? "Buying ABOVE" : "Going short", () => txFill(m, o, q));
+  }));
+  document.querySelectorAll("[data-cancel]").forEach((b) => b.addEventListener("click", () => {
+    const o = offers.find((x) => x.address.toBase58() === b.dataset.cancel);
+    act("Cancelling offer", () => txCancel(m, o));
+  }));
+}
+
+// ================= Transactions =================
+const Wm = (pubkey, isSigner = false) => ({ pubkey, isSigner, isWritable: true });
+const Ro = (pubkey, isSigner = false) => ({ pubkey, isSigner, isWritable: false });
+function ix(name, keys, ...args) {
+  return new W.TransactionInstruction({ programId: PROGRAM_ID, keys, data: cat(Uint8Array.from(IX[name]), ...args) });
+}
+function createAta(mint) {
+  return new W.TransactionInstruction({
+    programId: ATA_PROGRAM,
+    keys: [Wm(me, true), Wm(ata(me, mint)), Ro(me), Ro(mint), Ro(W.SystemProgram.programId), Ro(TOKEN_PROGRAM)],
+    data: u8(1), // CreateIdempotent: does nothing if it already exists
+  });
+}
+function ensureAtas(m) { return [createAta(USDC_MINT), createAta(m.aboveMint), createAta(m.belowMint)]; }
+function pairKeys(m) {
+  return [Ro(me, true), Wm(m.address), Wm(m.aboveMint), Wm(m.belowMint), Wm(m.vault), Ro(USDC_MINT),
+    Wm(ata(me, USDC_MINT)), Wm(ata(me, m.aboveMint)), Wm(ata(me, m.belowMint)), Ro(TOKEN_PROGRAM)];
+}
+function mintIx(m, n) { return ix("mint_pair", pairKeys(m), u64le(n)); }
+function fillIx(m, o, n) {
+  return ix("fill_offer", [Ro(me, true), Wm(m.address), Wm(o.address), Wm(o.escrow), Wm(o.makerReceive),
+    Ro(m.aboveMint), Ro(USDC_MINT), Wm(ata(me, USDC_MINT)), Wm(ata(me, m.aboveMint)), Ro(TOKEN_PROGRAM)], u64le(n));
+}
+
+async function txMint(m, n) {
+  if (!n) throw new Error("Enter how many pairs.");
+  return send([...ensureAtas(m), mintIx(m, n)]);
+}
+async function txRedeem(m, n) {
+  if (!n) throw new Error("Enter how many pairs.");
+  return send([...ensureAtas(m), ix("redeem_pair", pairKeys(m), u64le(n))]);
+}
+async function txFill(m, o, n) {
+  if (n > o.qty) throw new Error(`Only ${o.qty} left on that offer.`);
+  const ixs = ensureAtas(m);
+  if (o.side === "buy") {
+    // Going short: mint any pairs needed so we have the ABOVE to sell into the bid.
+    const have = bal(m.aboveMint);
+    if (have < n) ixs.push(mintIx(m, n - have));
+  }
+  ixs.push(fillIx(m, o, n));
+  return send(ixs);
+}
+async function txPost(m, side, price, n) {
+  if (!n) throw new Error("Enter a quantity.");
+  const id = BigInt(Date.now());
+  const offer = pda([te.encode("offer"), m.address.toBytes(), me.toBytes(), u64le(id)]);
+  const escrow = pda([te.encode("escrow"), offer.toBytes()]);
+  const ixs = ensureAtas(m);
+  if (side === "sell") {
+    const have = bal(m.aboveMint);
+    if (have < n) ixs.push(mintIx(m, n - have)); // mint pairs first, keep the BELOW
+  }
+  const escrowMint = side === "sell" ? m.aboveMint : USDC_MINT;
+  const source = ata(me, escrowMint);
+  const receive = ata(me, side === "sell" ? USDC_MINT : m.aboveMint);
+  ixs.push(ix("post_offer", [Wm(me, true), Ro(m.address), Wm(offer), Wm(escrow), Ro(escrowMint), Wm(source), Ro(receive),
+    Ro(TOKEN_PROGRAM), Ro(W.SystemProgram.programId)], u64le(id), u8(side === "sell" ? 0 : 1), u64le(price), u64le(n)));
+  return send(ixs);
+}
+async function txCancel(m, o) {
+  const escrowMint = o.side === "sell" ? m.aboveMint : USDC_MINT;
+  return send([createAta(escrowMint), ix("cancel_offer", [Wm(me, true), Wm(o.address), Wm(o.escrow), Ro(escrowMint),
+    Wm(ata(me, escrowMint)), Ro(TOKEN_PROGRAM)])]);
+}
+async function txSimple(m, name) {
+  const keys = name === "finalise" ? [Ro(pda([te.encode("target_table")])), Wm(m.address)] : [Wm(m.address)];
+  return send([ix(name, keys)]);
+}
+async function txSettle(m) {
+  return send([...ensureAtas(m), ix("settle_redeem", pairKeys(m), u64le(bal(m.aboveMint)), u64le(bal(m.belowMint)))]);
+}
+
+async function send(ixs) {
+  const tx = new W.Transaction();
+  ixs.forEach((i) => tx.add(i));
+  tx.feePayer = me;
+  const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash("confirmed");
+  tx.recentBlockhash = blockhash;
+  const signed = await provider.signTransaction(tx);
+  const sig = await conn.sendRawTransaction(signed.serialize());
+  const res = await conn.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, "confirmed");
+  if (res.value.err) throw new Error("Transaction failed on-chain: " + JSON.stringify(res.value.err));
+  return sig;
+}
+
+// Turn a failed simulation into a readable message (Anchor puts "Error Message: …" in the logs).
+function explain(e) {
+  const logs = (e && (e.logs || (e.transactionLogs))) || [];
+  const joined = Array.isArray(logs) ? logs.join("\n") : String(logs);
+  const m = joined.match(/Error Message: ([^\n.]+)/);
+  if (m) return m[1] + ".";
+  if (/insufficient funds|0x1\b/.test(joined + (e.message || ""))) return "Not enough mock USDC or tokens for that.";
+  if (/User rejected|rejected the request/i.test(e.message || "")) return "You cancelled the request in Phantom.";
+  return e.message || String(e);
+}
+
+async function act(label, fn) {
+  if (busy) return;
+  if (!me) { setStatus("Connect Phantom first.", "warn"); return; }
+  busy = true; setStatus(label + "… approve it in Phantom.", "info");
+  try {
+    const sig = await fn();
+    setStatus(label + " done.", "info");
+    const s = $("status");
+    s.append(" ");
+    const a = document.createElement("a");
+    a.href = "https://explorer.solana.com/tx/" + sig + "?cluster=devnet"; a.target = "_blank"; a.rel = "noopener";
+    a.textContent = "View on Explorer";
+    s.append(a);
+    await refresh(true);
+  } catch (e) {
+    console.error(e);
+    if (e && typeof e.getLogs === "function") { try { e.logs = await e.getLogs(conn); } catch (_) {} }
+    setStatus(label + " failed: " + explain(e), "error");
+  } finally { busy = false; }
+}
+
+// ================= Wallet =================
+function getProvider() {
+  const p = (window.phantom && window.phantom.solana) || window.solana;
+  return p && p.isPhantom ? p : null;
+}
+async function connect() {
+  provider = getProvider();
+  if (!provider) {
+    setStatus("Phantom not found. Install it from phantom.com, turn on Testnet Mode, choose Solana Devnet, then reload.", "warn");
+    return;
+  }
+  try {
+    const res = await provider.connect();
+    me = new W.PublicKey(res.publicKey.toString());
+    provider.on && provider.on("accountChanged", (pkey) => { me = pkey ? new W.PublicKey(pkey.toString()) : null; refresh(true); });
+    setStatus("Connected. Make sure Phantom is on Solana Devnet (Settings → Developer Settings → Testnet Mode).", "info");
+    await refresh(true);
+  } catch (e) { setStatus("Connection cancelled.", "warn"); }
+}
+
+// ================= Start =================
+function start() {
+  if (!window.solanaWeb3) { setStatus("Could not load Solana's web library. Check your internet connection and reload.", "error"); return; }
+  W = window.solanaWeb3;
+  conn = new W.Connection(RPC_URL, "confirmed");
+  PROGRAM_ID = new W.PublicKey(PROGRAM);
+  USDC_MINT = new W.PublicKey(USDC_MINT_STR);
+  TOKEN_PROGRAM = new W.PublicKey(TOKEN_PROGRAM_STR);
+  ATA_PROGRAM = new W.PublicKey(ATA_PROGRAM_STR);
+  $("progId").textContent = PROGRAM;
+  $("connectBtn").addEventListener("click", () => { if (!me) connect(); });
+  refresh(false).then(() => { if (selectedQ === null && markets.length) { selectedQ = markets[0].q; render(); } });
+  setInterval(() => {
+    // Don't redraw while someone is typing in the trade forms.
+    const a = document.activeElement;
+    const typing = a && (a.tagName === "INPUT" || a.tagName === "SELECT");
+    if (!busy && !typing) refresh(true);
+  }, REFRESH_MS);
+  const p = getProvider();
+  if (p && p.isConnected) connect();
+}
+start();
+</script>
+</body>
+</html>
